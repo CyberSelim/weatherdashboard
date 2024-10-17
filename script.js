@@ -1,59 +1,143 @@
-document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('search-button').addEventListener('click', handleSearch);
-});
+var cityInputEl = $('#city-input');
+var searchBtn = $('#search-button');
+var clearBtn = $('#clear-button');
+var pastSearchedCitiesEl = $('#past-searches');
+var currentCity;
 
-const knownCities = [
-    'Amsterdam', 'Berlin', 'London', 'Paris', 'Rome', 'New York', 'Tokyo', 'Sydney'
-];
+function getWeather(data) {
+    var requestUrl = `https://api.open-meteo.com/v1/forecast?latitude=${data.latitude}&longitude=${data.longitude}&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
+    fetch(requestUrl)
+        .then(function (response) {
+            return response.json();
+        })
+        .then(function (data) {
+            var currentConditionsEl = $('#currentConditions');
+            currentConditionsEl.addClass('border border-primary');
 
-function handleSearch() {
-    const locationInput = document.getElementById('location-input').value.trim();
-    console.log(`Locatie ingevoerd: ${locationInput}`);
+            var cityNameEl = $('<h2>');
+            cityNameEl.text(currentCity);
+            currentConditionsEl.append(cityNameEl);
 
-    if (!isValidLocationInput(locationInput)) {
-        alert('Voer een geldige locatie in.');
-        return;
+            var currentDateEl = $('<span>');
+            var today = new Date();
+            currentDateEl.text(` (${today.toLocaleDateString()}) `);
+            cityNameEl.append(currentDateEl);
+
+            var maxTemp = data.daily.temperature_2m_max[0];
+            var minTemp = data.daily.temperature_2m_min[0];
+            
+            var currentTempEl = $('<p>');
+            currentTempEl.text(`Max Temp: ${maxTemp}°C`);
+            currentConditionsEl.append(currentTempEl);
+            
+            var minTempEl = $('<p>');
+            minTempEl.text(`Min Temp: ${minTemp}°C`);
+            currentConditionsEl.append(minTempEl);
+        });
+    return;
+}
+
+function displaySearchHistory() {
+    var storedCities = JSON.parse(localStorage.getItem("cities")) || [];
+    var pastSearchesEl = document.getElementById('past-searches');
+    pastSearchesEl.innerHTML = '';
+    for (i = 0; i < storedCities.length; i++) {
+        var pastCityBtn = document.createElement("button");
+        pastCityBtn.classList.add("btn", "btn-primary", "my-2", "past-city");
+        pastCityBtn.setAttribute("style", "width: 100%");
+        pastCityBtn.textContent = `${storedCities[i].city}`;
+        pastSearchesEl.appendChild(pastCityBtn);
     }
-
-    fetchLocationData(locationInput);
+    return;
 }
 
-function isValidLocationInput(input) {
-    // Valideer dat de invoer een bekende stad is
-    return knownCities.includes(input);
-}
-
-function fetchLocationData(locationInput) {
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${locationInput}`)
-        .then(response => response.json())
-        .then(locations => {
-            console.log('Locatiegegevens:', locations);
-            if (locations.length > 0) {
-                const city = {
-                    latitude: locations[0].lat,
-                    longitude: locations[0].lon
-                };
-                console.log(`Gevonden coördinaten: ${city.latitude}, ${city.longitude}`);
-                fetchWeatherData(city, locationInput);
+function getCoordinates() {
+    var requestUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${currentCity}`;
+    var storedCities = JSON.parse(localStorage.getItem("cities")) || [];
+    fetch(requestUrl)
+        .then(function (response) {
+            if (response.status >= 200 && response.status <= 299) {
+                return response.json();
             } else {
-                alert('Locatie niet gevonden');
+                throw Error(response.statusText);
             }
         })
-        .catch(error => console.error('Error fetching location data:', error));
-}
-
-function fetchWeatherData(city, locationName) {
-    const apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${city.latitude}&longitude=${city.longitude}&hourly=temperature_2m`;
-    console.log(`API URL: ${apiUrl}`);
-
-    fetch(apiUrl)
-        .then(response => response.json())
-        .then(data => {
-            console.log('Weergegevens:', data);
-            const hourlyData = data.hourly.temperature_2m;
-            const currentTemp = hourlyData[0];
-            document.getElementById('location').textContent = locationName;
-            document.getElementById('temperature').textContent = currentTemp;
+        .then(function (data) {
+            var cityData = data[0];
+            var cityInfo = {
+                city: currentCity,
+                latitude: cityData.lat,
+                longitude: cityData.lon
+            };
+            storedCities.push(cityInfo);
+            localStorage.setItem("cities", JSON.stringify(storedCities));
+            displaySearchHistory();
+            return cityInfo;
         })
-        .catch(error => console.error('Error fetching the weather data:', error));
+        .then(function (data) {
+            getWeather(data);
+        });
+    return;
 }
+
+function handleClearHistory(event) {
+    event.preventDefault();
+    var pastSearchesEl = document.getElementById('past-searches');
+    localStorage.removeItem("cities");
+    pastSearchesEl.innerHTML = '';
+    return;
+}
+
+function clearCurrentCityWeather() {
+    var currentConditionsEl = document.getElementById("currentConditions");
+    currentConditionsEl.innerHTML = '';
+    var fiveDayForecastHeaderEl = document.getElementById("fiveDayForecastHeader");
+    fiveDayForecastHeaderEl.innerHTML = '';
+    var fiveDayForecastEl = document.getElementById("fiveDayForecast");
+    fiveDayForecastEl.innerHTML = '';
+    return;
+}
+
+function handleCityFormSubmit(event) {
+    event.preventDefault();
+    currentCity = cityInputEl.val().trim();
+    clearCurrentCityWeather();
+    getCoordinates();
+    return;
+}
+
+function getPastCity(event) {
+    var element = event.target;
+    if (element.matches(".past-city")) {
+        currentCity = element.textContent;
+        clearCurrentCityWeather();
+        var requestUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${currentCity}`;
+        
+        fetch(requestUrl)
+            .then(function (response) {
+                if (response.status >= 200 && response.status <= 299) {
+                    return response.json();
+                } else {
+                    throw Error(response.statusText);
+                }
+            })
+            .then(function (data) {
+                var cityData = data[0];
+                var cityInfo = {
+                    city: currentCity,
+                    latitude: cityData.lat,
+                    longitude: cityData.lon
+                };
+                return cityInfo;
+            })
+            .then(function (data) {
+                getWeather(data);
+            });
+    }
+    return;
+}
+
+displaySearchHistory();
+searchBtn.on("click", handleCityFormSubmit);
+clearBtn.on("click", handleClearHistory);
+pastSearchedCitiesEl.on("click", getPastCity);
